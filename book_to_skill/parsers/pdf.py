@@ -168,6 +168,21 @@ def extract_with_docling(pdf_path: str) -> str | None:
         return None
 
 
+def count_pdf_images(pdf_path: str) -> int | None:
+    """Images embedded in a PDF, or None when pypdf is missing or fails.
+
+    None means "not measured", never "no images": a 0 here would silence the
+    dropped-figure warning for every figure-heavy PDF.
+    """
+    try:
+        import pypdf
+        with open(pdf_path, "rb") as f:
+            reader = pypdf.PdfReader(f)
+            return sum(len(page.images) for page in reader.pages)
+    except Exception:
+        return None
+
+
 def count_pages(pdf_path: str) -> int:
     """Return the number of pages in a PDF using progressively safer fallbacks."""
     # Try pdfinfo first.
