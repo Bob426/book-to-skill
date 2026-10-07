@@ -43,6 +43,7 @@ from book_to_skill.parsers.pdf import (
     extract_with_pdfminer,
     looks_image_only,
     count_pages,
+    count_pdf_images,
 )
 from book_to_skill.parsers.epub import (
     extract_with_ebooklib,
@@ -1240,6 +1241,13 @@ def extract_single_file(input_path: Path, extraction_mode: str, install_mode: st
                         
         pages = count_pages(input_str)
         pages_label = "pages"
+        images_dropped = count_pdf_images(input_str)
+        if images_dropped is not None and images_dropped > _EPUB_IMAGE_NOTICE_THRESHOLD:
+            print(
+                f"  [warn] {input_path.name} contains {images_dropped} image(s); "
+                "their content is not extracted",
+                file=sys.stderr,
+            )
     elif ext in TEXT_EXTENSIONS:
         print(f"Extracting text document: {input_str}")
         text = read_text_file(input_str)
@@ -1248,6 +1256,7 @@ def extract_single_file(input_path: Path, extraction_mode: str, install_mode: st
         method = "plain-text"
         pages = 0
         pages_label = "sections"
+        images_dropped = 0  # plain text cannot embed an image, so 0 is measured
     elif ext in HTML_EXTENSIONS:
         print(f"Extracting HTML: {input_str}")
         text = extract_html_file(input_str)
@@ -1461,8 +1470,11 @@ def main():
     total_chars = len(consolidated_text)
     total_words = len(consolidated_text.split())
     total_tokens = estimate_tokens(consolidated_text)
-    total_images_dropped = sum(
-        src["images_dropped"] or 0 for src in extracted_sources
+    # One unmeasured source makes the total unknown: summing it as 0 reported
+    # "no images dropped" for every PDF and silenced the warning that keys on it.
+    image_counts = [src["images_dropped"] for src in extracted_sources]
+    total_images_dropped = (
+        None if any(n is None for n in image_counts) else sum(image_counts)
     )
     
     # Detect structure from source content only. The generated SOURCE banners in

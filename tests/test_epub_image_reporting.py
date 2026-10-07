@@ -75,3 +75,45 @@ def test_main_persists_epub_image_loss_in_source_and_total_metadata(
     metadata = json.loads(output_meta.read_text(encoding="utf-8"))
     assert metadata["images_dropped"] == 3
     assert metadata["sources"][0]["images_dropped"] == 3
+
+
+def _run_main(tmp_path, monkeypatch, sources):
+    output_dir = tmp_path / "output"
+    output_meta = output_dir / "metadata.json"
+    monkeypatch.setattr(sys, "argv", ["extract.py", *map(str, sources), "--install-missing", "no"])
+    monkeypatch.setattr("book_to_skill.utils.OUTPUT_DIR", output_dir)
+    monkeypatch.setattr("book_to_skill.utils.OUTPUT_TEXT", output_dir / "full_text.txt")
+    monkeypatch.setattr("book_to_skill.utils.OUTPUT_META", output_meta)
+    monkeypatch.setattr("book_to_skill.utils.prepare_dependencies", lambda *args: None)
+    main()
+    return json.loads(output_meta.read_text(encoding="utf-8"))
+
+
+def test_total_is_null_when_any_source_was_not_measured(tmp_path, monkeypatch):
+    # An HTML source can embed images but is not counted; summing its null as 0
+    # once reported "0 dropped" for every PDF and silenced the warning.
+    epub = _make_epub_with_images(tmp_path / "figures.epub", image_count=3)
+    html = tmp_path / "page.html"
+    html.write_text("<html><body><h1>Chapter 1</h1><p>Prose.</p></body></html>", encoding="utf-8")
+
+    metadata = _run_main(tmp_path, monkeypatch, [epub, html])
+
+    assert metadata["images_dropped"] is None
+
+
+def test_plain_text_counts_as_zero_images(tmp_path, monkeypatch):
+    epub = _make_epub_with_images(tmp_path / "figures.epub", image_count=3)
+    notes = tmp_path / "notes.txt"
+    notes.write_text("Chapter 1\n\nPlain prose.\n", encoding="utf-8")
+
+    metadata = _run_main(tmp_path, monkeypatch, [epub, notes])
+
+    assert metadata["images_dropped"] == 3
+
+
+def test_pdf_image_count_is_none_when_unreadable(tmp_path):
+    from book_to_skill.parsers.pdf import count_pdf_images
+
+    broken = tmp_path / "broken.pdf"
+    broken.write_bytes(b"not a pdf")
+    assert count_pdf_images(str(broken)) is None
